@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#090b10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>iMic — Ultra-Low-Latency USB Mic</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <!-- Top Header & Live Latency Ping Indicator -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-dot" id="connDot"></span>
+        <div>
+          <h1>iMic</h1>
+          <p class="subtitle" id="transportModeLabel">48kHz · 16-bit PCM Mono</p>
+        </div>
+      </div>
+
+      <div class="ping-badge" id="pingBadge" title="Live WebSocket Round-Trip Ping">
+        <span class="ping-dot" id="pingDot"></span>
+        <span class="ping-value" id="pingValue">-- ms</span>
+      </div>
+    </header>
+
+    <!-- Secure Context Notice (shown only when plain HTTP over LAN blocks getUserMedia) -->
+    <section class="alert-banner hidden" id="insecureBanner">
+      <strong>Microphone API Blocked on Non-Localhost HTTP</strong>
+      <p>
+        For zero-config access over USB, use ADB Reverse and open
+        <code>http://localhost:8000</code>. On Wi-Fi HTTP, enable this origin in
+        <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>.
+      </p>
+    </section>
+
+    <!-- Real-Time Canvas Volume Visualizer Card -->
+    <section class="card visualizer-card">
+      <div class="visualizer-header">
+        <span class="section-label">REAL-TIME INPUT LEVEL</span>
+        <span class="db-readout" id="dbReadout">-∞ dB</span>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="visualizerCanvas"></canvas>
+      </div>
+      <div class="meter-track" aria-hidden="true">
+        <div class="meter-fill" id="meterFill"></div>
+      </div>
+      <div class="telemetry-row">
+        <div class="telemetry-item">
+          <span class="t-label">Quantum</span>
+          <span class="t-val" id="quantumStat">128f (2.7ms)</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="t-label">PC Buffer</span>
+          <span class="t-val" id="pcBufferStat">-- ms</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="t-label">PC Target</span>
+          <span class="t-val" id="pcTargetStat">Detecting…</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Primary Controls: Connect / Mute-Unmute -->
+    <section class="controls-hero">
+      <button type="button" class="btn-primary" id="startStopBtn">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+        <span id="startStopLabel">Start Microphone</span>
+      </button>
+
+      <button type="button" class="btn-mute" id="muteBtn" disabled>
+        <svg class="icon" id="muteIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        </svg>
+        <span id="muteLabel">Mute</span>
+      </button>
+    </section>
+
+    <!-- Gain Slider Card -->
+    <section class="card control-card">
+      <div class="control-header">
+        <label for="gainSlider" class="section-label">PREAMP GAIN</label>
+        <div class="gain-meta">
+          <span class="gain-value" id="gainValue">100% (0.0 dB)</span>
+          <button type="button" class="btn-chip" id="resetGainBtn">Reset</button>
+        </div>
+      </div>
+      <input
+        type="range"
+        id="gainSlider"
+        min="0"
+        max="300"
+        step="1"
+        value="100"
+        aria-label="Microphone Gain"
+      />
+      <div class="range-ticks">
+        <span>0%</span>
+        <span>100% (Unity)</span>
+        <span>200%</span>
+        <span>300%</span>
+      </div>
+    </section>
+
+    <!-- Browser DSP Toggles (Disabled by Default for Minimum Latency) -->
+    <section class="card dsp-card">
+      <div class="control-header">
+        <span class="section-label">BROWSER DSP (OFF FOR ULTRA-LOW LATENCY)</span>
+      </div>
+
+      <label class="toggle-row" for="toggleEcho">
+        <div>
+          <span class="toggle-title">Echo Cancellation</span>
+          <span class="toggle-desc">Browser acoustic echo filter (+10–30ms DSP delay)</span>
+        </div>
+        <input type="checkbox" id="toggleEcho" />
+        <span class="switch-ui"></span>
+      </label>
+
+      <label class="toggle-row" for="toggleNoise">
+        <div>
+          <span class="toggle-title">Noise Suppression</span>
+          <span class="toggle-desc">Browser spectral noise gate</span>
+        </div>
+        <input type="checkbox" id="toggleNoise" />
+        <span class="switch-ui"></span>
+      </label>
+
+      <label class="toggle-row" for="toggleAgc">
+        <div>
+          <span class="toggle-title">Auto-Gain Control</span>
+          <span class="toggle-desc">Automatic browser input level compression</span>
+        </div>
+        <input type="checkbox" id="toggleAgc" />
+        <span class="switch-ui"></span>
+      </label>
+    </section>
+
+    <!-- Routing & Device Selection -->
+    <section class="card routing-card">
+      <div class="routing-group">
+        <label for="phoneMicSelect" class="section-label">PHONE MIC CAPSULE</label>
+        <select id="phoneMicSelect">
+          <option value="">Default Smartphone Microphone</option>
+        </select>
+      </div>
+
+      <div class="routing-group">
+        <label for="pcDeviceSelect" class="section-label">PC OUTPUT TARGET (VB-CABLE)</label>
+        <select id="pcDeviceSelect">
+          <option value="">Loading PC audio devices…</option>
+        </select>
+      </div>
+    </section>
+
+    <footer class="status-footer" id="statusFooter">
+      Ready · Tap "Start Microphone" to stream 48kHz PCM16
+    </footer>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
